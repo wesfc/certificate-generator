@@ -3,6 +3,7 @@ node_modules
 jspm_packages
 yarn-error.log
 .dynamodb
+certificate.pdf
 
 # Serverless directories
 .serverless
