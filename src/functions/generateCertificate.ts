@@ -5,6 +5,7 @@ import { readFileSync } from 'fs';
 import { compile } from 'handlebars';
 import dayjs from 'dayjs';
 import chromium from 'chrome-aws-lambda';
+import { S3 } from 'aws-sdk';
 
 interface ICreateCertificate {
   id: string;
@@ -31,16 +32,6 @@ const compileTemplate = async (data: ITemplate) => {
 export const handler: APIGatewayProxyHandler = async (event) => {
   const { id, name, grade } = JSON.parse(event.body) as ICreateCertificate;
 
-  await document.put({
-    TableName: 'users_certificate',
-    Item: {
-      id,
-      name,
-      grade,
-      created_at: new Date().getTime()
-    }
-  }).promise();
-
   const response = await document.query({
     TableName: 'users_certificate',
     KeyConditionExpression: 'id = :id',
@@ -48,6 +39,20 @@ export const handler: APIGatewayProxyHandler = async (event) => {
       ':id': id
     }
   }).promise();
+
+  const userAlreadyExists = response.Items[0];
+
+  if (!userAlreadyExists) {
+    await document.put({
+      TableName: 'users_certificate',
+      Item: {
+        id,
+        name,
+        grade,
+        created_at: new Date().getTime()
+      }
+    }).promise();
+  }
 
   const medalPath = join(process.cwd(), "src", "templates", "selo.png");
   const medal = readFileSync(medalPath, "base64");
@@ -77,9 +82,29 @@ export const handler: APIGatewayProxyHandler = async (event) => {
     printBackground: true,
     preferCSSPageSize: true,
     path: process.env.IS_OFFLINE ? "./certificate.pdf" : null,
-  })
+  });
+
+  await browser.close();
+
+  const s3 = new S3();
+  // This code won't be used anymore. Bucket already was created! It is necessary only once.
+  // await s3.createBucket({
+  //   Bucket: "certificategenerator-ignite2022",
+  // }).promise();
+
+  await s3.putObject({
+    Bucket: "certificategenerator-ignite2022",
+    Key: `${id}.pdf`,
+    ACL: "public-read",
+    Body: pdf,
+    ContentType: "application/pdf"
+  }).promise();
+
   return {
     statusCode: 201,
-    body: JSON.stringify(response.Items[0]),
+    body: JSON.stringify({
+      message: "Certificado criado com sucesso!",
+      url: `https://certificategenerator-ignite2022.s3.amazonaws.com/${id}.pdf`
+    }),
   };
 }
